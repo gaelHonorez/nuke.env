@@ -1,5 +1,5 @@
 ## this script was assembled by j.hezer for studiorakete 2012 all input comes from frank rueter, ivan busquet and Michael Garrett 
-## still wip with worldToNDC and worldToCamera only
+##  FOV part by Tristant Salome and Gael Honorez  @ nozon.com
 
 import nuke
 import os
@@ -34,9 +34,10 @@ def ExrToCamera():
         imageWidth = metaData['input/width']
         imageHeight = metaData['input/height']
         aspectRatio = float(imageWidth)/float(imageHeight)
-        hAperture = 36.0
+        hAperture = 25.4
+
         vAperture = hAperture/aspectRatio
-        
+
         # get additional stuff
         first = node.firstFrame()
         last = node.lastFrame()
@@ -64,28 +65,43 @@ def ExrToCamera():
             #get the data out of the exr header
                 wTC = node.metadata('exr/worldToCamera',frame, act)
                 wTN = node.metadata('exr/worldToNDC',frame, act)
+
+                matrixList = wTC
+
+                camMatrix = getMetadataMatrix(wTC)
+                invCamMatrix  = camMatrix.inverse()
+
+                worldProjectionMatrix = getMetadataMatrix(wTN)
                 
-            #set the lenshiift if additional metadata is available or manage to calculate it from the toNDC matrix    
-                #cam['win_translate'].setValue( lensShift, 0 , frame )
-                
-            # get the focal length out of the worldToNDC Matrix
-            # thats the wip part any ideas ??
-                
-                worldNDC = wTN
-                
-                lx =  (-1 - worldNDC[12] - worldNDC[8]) / worldNDC[0]
-                rx =  (1 - worldNDC[12] - worldNDC[8]) / worldNDC[0]
-                by = (-1 - worldNDC[13] - worldNDC[9]) / worldNDC[5]
-                ty = (1 - worldNDC[13] - worldNDC[9]) / worldNDC[5]
-                swW = max( lx , rx ) - min( lx , rx )  # Screen Window Width
-                swH = max( by , ty ) - min( by , ty )  # Screen Window Height
-                focal = hAperture / swW
+                projectionMatrix = worldProjectionMatrix * invCamMatrix
+            
+                vectorX = nuke.math.Vector4(1,0,1,1)
+                vectorXProjected = projectionMatrix.transform(vectorX)
+                pxProjected = vectorXProjected.x / vectorXProjected.w
+                focal = (pxProjected * hAperture) / 2.0
                 cam['focal'].setValueAt(  float( focal ), frame )
+
+                 # Approximate clip plane
+                x1 = 1.0
+                x2 = 2.0
+                vector1 = nuke.math.Vector4(0,0,x1,1)
+                vector2 = nuke.math.Vector4(0,0,x2,1)
+            
+                vector1Projected = projectionMatrix.transform(vector1)
+                vector2Projected = projectionMatrix.transform(vector2)
+
+                z1 = vector1Projected.z / vector1Projected.w
+                z2 = vector2Projected.z / vector2Projected.w
+
+                b = (x1 - x2) / (z2 - z1) # creating line equation x+bz+c = 0
+                c = -x1 - (b * z1)
+
+                nearClip = -c
+                farClip = -c-b
+                
+
             
             # do the matrix math for rotation and translation
-        
-                matrixList = wTC
-                camMatrix = getMetadataMatrix(wTC)
                 
                 flipZ=nuke.math.Matrix4()
                 flipZ.makeIdentity()
